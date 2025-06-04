@@ -1,25 +1,25 @@
-#include <bits/stdc++.h> 
+#include <bits/stdc++.h>
 using namespace std;
 const double INF = 1e15;
 
 struct Edge
 {
     int x, y, id; // Nodes x and y connected by this edge, id is the index of the edge
-    double w; // Weight of the edge
+    double w;     // Weight of the edge
     // replacedId indicates which changed edge (by index) might replace this edge
     // -1 meaning no replacement
-    int replacedId = -1; 
-    Edge() : x(-1), y(-1), w(0.0), id(-1), replacedId(-1) {}//constructor
+    int replacedId = -1;
+    Edge() : x(-1), y(-1), w(0.0), id(-1), replacedId(-1) {} // constructor
     Edge(int u, int v, double w, int id_) : x(u), y(v), w(w), id(id_), replacedId(-1) {}
     bool operator==(const Edge &other) const
-        {
-            return (x == other.x && y== other.y && w == other.w && replacedId == other.replacedId);
-        }
+    {
+        return (x == other.x && y == other.y && w == other.w && replacedId == other.replacedId);
+    }
 
-        bool operator<(const Edge &other) const
-        {
-            return w < other.w;
-        }
+    bool operator<(const Edge &other) const
+    {
+        return w < other.w;
+    }
 };
 
 // Structure to store Vertex (Information for Rooted Tree)
@@ -37,81 +37,91 @@ struct Vertex
     }
 };
 
-
 enum class EdgeStatus
 {
-    NONE=0, // added to remainder
-    INS=1,  // inserted to key edges
-    DEL=2,  // deleted from key edges
-    RPL=3   // replaced an existing key edge
+    NONE = 0, // added to remainder
+    INS = 1,  // inserted to key edges
+    DEL = 2,  // deleted from key edges
+    RPL = 3   // replaced an existing key edge
 };
 
-enum class OperationType {
+enum class OperationType
+{
     INSERT = 0,
     DELETE = 1
 };
 
-
-int findMinHeightVertex(vector<vector<pair<int, int>>> &adjEx)
+int findMinHeightVertex(vector<vector<pair<int, int>>> &adjEx, vector<bool> &visited, int start)
 {
-    {
     int V = adjEx.size();
-    vector<int> degree(V, 0); // Degree of each vertex
-    queue<int> q;             // Queue to store leaves
+    vector<int> degree(V, 0);
+    queue<int> q;
 
-    // Initialize the degree array and find initial leaves
-    for (int i = 0; i < V; i++)
+    vector<bool> localVisited(V, false);
+    queue<int> bfs;
+    bfs.push(start);
+    localVisited[start] = true;
+
+    // First, gather component starting from 'start'
+    while (!bfs.empty())
     {
-        degree[i] = adjEx[i].size();
-        if (degree[i] == 1)
+        int u = bfs.front();
+        bfs.pop();
+        for (auto &[v, _] : adjEx[u])
         {
-            q.push(i); // Add leaves to the queue
-        }
-    }
-
-    // Trim leaves level by level
-    int remainingVertices = V;
-    while (remainingVertices > 2)
-    {
-        int sz = q.size();
-        remainingVertices -= sz; // Remove current leaves
-
-        for (int i = 0; i < sz; i++)
-        {
-            int leaf = q.front();
-            q.pop();
-
-            // Reduce the degree of neighbors
-            for (const auto &[neighbor, w] : adjEx[leaf])
+            if (!localVisited[v])
             {
-                degree[neighbor]--;
-                if (degree[neighbor] == 1)
-                {
-                    q.push(neighbor); // Add new leaf
-                }
+                localVisited[v] = true;
+                bfs.push(v);
             }
         }
     }
 
-    // The remaining vertices are the centers
-    if (q.size() == 1)
+    // Mark global visited[]
+    for (int i = 0; i < V; ++i)
+        if (localVisited[i])
+            visited[i] = true;
+
+    // Build degree[] and identify leaves
+    for (int i = 0; i < V; ++i)
     {
-        return q.front();
+        if (localVisited[i])
+        {
+            degree[i] = adjEx[i].size();
+            if (degree[i] <= 1)
+                q.push(i);
+        }
     }
-    else if (q.size() == 2)
+
+    int remaining = std::count(localVisited.begin(), localVisited.end(), true);
+    while (remaining > 2 && !q.empty())
     {
-        int first = q.front();
+        int sz = q.size();
+        remaining -= sz;
+        for (int i = 0; i < sz; ++i)
+        {
+            int leaf = q.front();
+            q.pop();
+            for (auto &[nbr, _] : adjEx[leaf])
+            {
+                if (--degree[nbr] == 1)
+                    q.push(nbr);
+            }
+        }
+    }
+
+    // Return one of the remaining centroids
+    while (!q.empty())
+    {
+        int r = q.front();
         q.pop();
-        int second = q.front();
-
-        // Return either vertex (degree comparison is unnecessary as both are balanced)
-        return first;
+        if (localVisited[r])
+            return r;
     }
 
-    return -1; // Should not reach here for a valid tree
+    cerr << "[ERROR] Could not find root for component starting at " << start << "\n";
+    return -1;
 }
-}
-
 
 vector<vector<pair<int, int>>> buildExAdj(vector<Edge> &Ex, int V)
 {
@@ -131,7 +141,7 @@ vector<vector<pair<int, int>>> buildExAdj(vector<Edge> &Ex, int V)
 
 class RootedTree
 {
-    public:
+public:
     int V;
     vector<Vertex> RootedT;
     vector<Edge> Ex;
@@ -143,23 +153,34 @@ class RootedTree
         this->V = V;
         RootedT.resize(V);
     }
-    RootedTree(const RootedTree& other)
-{
-    V = other.V;
-    RootedT = other.RootedT;
-    Ex = other.Ex;
-    Er = other.Er;
-    deletedIds = other.deletedIds;
-}
+    RootedTree(const RootedTree &other)
+    {
+        V = other.V;
+        RootedT = other.RootedT;
+        Ex = other.Ex;
+        Er = other.Er;
+        deletedIds = other.deletedIds;
+    }
 
-    
+    // Copy assignment operator
+    RootedTree &operator=(const RootedTree &other)
+    {
+        if (this != &other)
+        {
+            V = other.V;
+            RootedT = other.RootedT;
+            Ex = other.Ex;
+            Er = other.Er;
+            deletedIds = other.deletedIds;
+        }
+        return *this;
+    }
 
-    //We Create the Rooted Tree (Algorithm 3)
-    // We find a vertex with Minimum Height vertex as root and run BFS from it.
-    // If multiple components exist, we repeat.
+    // We Create the Rooted Tree (Algorithm 3)
+    //  We find a vertex with Minimum Height vertex as root and run BFS from it.
+    //  If multiple components exist, we repeat.
 
-        
-    //BFS begins. Use parallelisaztion for BFS
+    // BFS begins. Use parallelisaztion for BFS
     void bfsFromRoot(int root, vector<vector<pair<int, int>>> &adjEx)
     {
         queue<int> q;
@@ -203,33 +224,38 @@ class RootedTree
             }
         }
     }
-    ///BFS ends.
-    
-    
+    /// BFS ends.
+
     void Create_Tree(vector<vector<pair<int, int>>> &adjEx)
     {
         V = adjEx.size();
+        RootedT.assign(V, Vertex());
+
+        vector<bool> visited(V, false);
 
         for (int i = 0; i < V; i++)
         {
-            if (RootedT[i].parent == -1)
+            if (!visited[i] && RootedT[i].parent == -1)
             {
-                int r = findMinHeightVertex(adjEx);
+                int r = findMinHeightVertex(adjEx, visited, i);
+                if (r == -1)
+                {
+                    cerr << "[ERROR] Could not find a valid root. Component starting at " << i << " might be isolated.\n";
+                    continue;
+                }
+
                 RootedT[r].parent = r;
                 RootedT[r].root = r;
-                // BFS from r
+                cout << "[DEBUG] Rooted tree built with root = " << r << "\n";
                 bfsFromRoot(r, adjEx);
-                break;
             }
         }
     }
 
-    
     int findRoot(int v)
     {
         return RootedT[v].root;
     }
-
 
     // Utility function to get path to root
     std::vector<int> getPathToRoot(int x)
@@ -243,7 +269,6 @@ class RootedTree
         path.push_back(x);
         return path;
     }
-
 
     // Function to find the maximum edge on the path from u to v
     Edge findMaxEdgeOnPath(int u, int v)
@@ -324,440 +349,528 @@ class RootedTree
         return umx.w > vmx.w ? umx : vmx;
     }
 
-
-   void Classify_Edges(vector<Edge> &CE,
-                    vector<EdgeStatus> &Status,
-                    vector<Edge> &Marked,
-                    vector<bool> &operation)
-{
-    for (int i = 0; i < (int)CE.size(); i++)
+    void Classify_Edges(vector<Edge> &CE,
+                        vector<EdgeStatus> &Status,
+                        vector<Edge> &Marked,
+                        vector<bool> &operation)
     {
-        Status[i] = EdgeStatus::NONE;
-        Marked[i] = Edge();
-        Edge &E = CE[i];
-        bool op = operation[i];
-
-        if (op)
+        for (int i = 0; i < (int)CE.size(); i++)
         {
-            // op == true now means “INSERT a new edge”
-            int ru = findRoot(E.x), rv = findRoot(E.y);
-            if (ru != rv)
-            {
-                // Endpoints in different components → insert
-                Status[i] = EdgeStatus::INS;
-            }
-            else
-            {
-                // Same component → maybe replace a heavier edge
-                Edge MaxW = findMaxEdgeOnPath(E.x, E.y);
-                if (MaxW.id == -1)
-                {
-                    cout << "[DEBUG] No replaceable edge found: MaxW.id == -1" << endl;
-                }
-                else if (MaxW.w > E.w && MaxW.id!=-1)
-                {
-                    // New edge is lighter → replace
-                    Status[i] = EdgeStatus::RPL;
-                    Marked[i] = MaxW;
+            Status[i] = EdgeStatus::NONE;
+            Marked[i] = Edge();
+            Edge &E = CE[i];
+            bool op = operation[i];
 
-                    // Find MaxW’s index in Ex
-                    auto it = std::find_if(Ex.begin(), Ex.end(),
-                                           [&](const Edge &e) { return e.id == MaxW.id; });
-                    if (it != Ex.end()) {
-                        Marked[i].replacedId = std::distance(Ex.begin(), it);
-                    } else {
-                        Marked[i].replacedId = -1;
-                        cerr << "[ERROR] Could not locate edge id="
-                             << MaxW.id << " in Ex!" << endl;
-                    }
-
-                    cout << "[DEBUG] Marking edge for replacement: "
-                         << "MaxW.id = " << MaxW.id
-                         << ", rpl_idx = " << Marked[i].replacedId
-                         << ", E.id = " << E.id
-                         << ", MaxW.w = " << MaxW.w
-                         << ", E.w = " << E.w << endl;
+            if (op)
+            {
+                // op == true now means “INSERT a new edge”
+                int ru = findRoot(E.x), rv = findRoot(E.y);
+                if (ru != rv)
+                {
+                    // Endpoints in different components → insert
+                    Status[i] = EdgeStatus::INS;
                 }
                 else
                 {
-                    cout << "[DEBUG] Found heavier or equal edge on path, won't replace: "
-                         << "MaxW.w = " << MaxW.w
-                         << ", NewEdge.w = " << E.w << endl;
+                    // Same component → maybe replace a heavier edge
+                    Edge MaxW = findMaxEdgeOnPath(E.x, E.y);
+                    if (MaxW.id == -1)
+                    {
+                        cout << "[DEBUG] No replaceable edge found: MaxW.id == -1" << endl;
+                    }
+                    else if (MaxW.w > E.w && MaxW.id != -1)
+                    {
+                        // New edge is lighter → replace
+                        Status[i] = EdgeStatus::RPL;
+                        Marked[i] = MaxW;
+
+                        // Find MaxW’s index in Ex
+                        auto it = std::find_if(Ex.begin(), Ex.end(),
+                                               [&](const Edge &e)
+                                               { return e.id == MaxW.id; });
+                        if (it != Ex.end())
+                        {
+                            Marked[i].replacedId = std::distance(Ex.begin(), it);
+                        }
+                        else
+                        {
+                            Marked[i].replacedId = -1;
+                            cerr << "[ERROR] Could not locate edge id="
+                                 << MaxW.id << " in Ex!" << endl;
+                        }
+
+                        cout << "[DEBUG] Marking edge for replacement: "
+                             << "MaxW.id = " << MaxW.id
+                             << ", rpl_idx = " << Marked[i].replacedId
+                             << ", E.id = " << E.id
+                             << ", MaxW.w = " << MaxW.w
+                             << ", E.w = " << E.w << endl;
+                    }
+                    else
+                    {
+                        cout << "[DEBUG] Found heavier or equal edge on path, won't replace: "
+                             << "MaxW.w = " << MaxW.w
+                             << ", NewEdge.w = " << E.w << endl;
+                    }
                 }
             }
+            else
+            {
+                // op == false now means “DELETE the edge”
+                Status[i] = EdgeStatus::DEL;
+            }
+        }
+    }
+
+    void Process_Status(vector<Edge> &CE, vector<EdgeStatus> &Status, vector<Edge> &Marked)
+    {
+        std::cout << "[DEBUG] → Process_Status: entering, CE.size="
+                  << CE.size() << ", Status.size=" << Status.size()
+                  << ", Marked.size=" << Marked.size() << "\n";
+
+        if (Status.size() != CE.size() || Marked.size() != CE.size())
+        {
+            std::cerr << "[FATAL] Size mismatch in Process_Status" << std::endl;
+            exit(1);
+        }
+
+        bool rebuildtree = false;
+
+        std::unordered_map<int, int> edgeVisitCount;
+
+        for (int i = 0; i < (int)CE.size(); ++i)
+        {
+            Edge &E = CE[i];
+            EdgeStatus S = Status[i];
+
+            edgeVisitCount[E.id]++;
+            if (edgeVisitCount[E.id] > 5)
+            {
+                std::cerr << "[LOOP WARNING] Edge id=" << E.id << " processed > 5 times.\n";
+            }
+
+            std::cout << "[DEBUG] Edge #" << i << " status: " << static_cast<int>(S)
+                      << " (" << E.x << "-" << E.y << ", w=" << E.w << ", id=" << E.id << ")" << std::endl;
+
+            if (deletedIds.count(E.id))
+            {
+                std::cout << "[DEBUG] Edge id=" << E.id << " already processed. Skipping." << std::endl;
+                continue;
+            }
+
+            switch (S)
+            {
+            case EdgeStatus::DEL:
+            {
+                std::cout << "[DEBUG] Edge marked for deletion" << std::endl;
+
+                bool found = false;
+
+                for (Edge &e : Ex)
+                {
+                    if (e.id == E.id)
+                    {
+                        e.w = INF;
+                        found = true;
+                        rebuildtree = true;
+                        std::cout << "[DEBUG] Set weight to INF for edge in Ex: id=" << E.id << std::endl;
+                        break;
+                    }
+                }
+
+                for (Edge &e : Er)
+                {
+                    if (e.id == E.id)
+                    {
+                        e.w = INF;
+                        found = true;
+                        std::cout << "[DEBUG] Set weight to INF for edge in Er: id=" << E.id << std::endl;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    std::cerr << "[WARNING] Delete called but edge not found: id=" << E.id << "\n";
+                }
+                else
+                {
+                    deletedIds.insert(E.id);
+                }
+
+                break;
+            }
+
+            case EdgeStatus::NONE:
+                Er.push_back(E);
+                std::cout << "[DEBUG] Edge moved to remainder edges (Er)" << std::endl;
+                break;
+
+            case EdgeStatus::INS:
+            {
+                bool exists = std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e)
+                                          { return e.id == E.id; });
+
+                if (exists)
+                {
+                    std::cout << "[DEBUG] Edge with id=" << E.id << " already exists in Ex. Skipping insertion.\n";
+                }
+                else
+                {
+                    Ex.push_back(E);
+                    rebuildtree = true;
+                    std::cout << "[DEBUG] Edge inserted into Ex\n";
+                }
+
+                // Remove this edge from Er to prevent reprocessing
+                Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                        { return deletedIds.count(e.id) || e.w == INF || e.w == -1; }),
+                         Er.end());
+
+                break;
+            }
+
+            case EdgeStatus::RPL:
+            {
+                Edge &Erpl = Marked[i];
+
+                std::cout << "[DEBUG] Edge marked for replacement, original id = " << Erpl.id << std::endl;
+
+                if (deletedIds.count(Erpl.id))
+                {
+                    std::cout << "[DEBUG] Replacement target already removed: id=" << Erpl.id << std::endl;
+
+                    // Avoid inserting the new edge if old one is already gone
+                    Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                            { return e.id == E.id; }),
+                             Er.end());
+                    continue;
+                }
+
+                auto it = std::find_if(Ex.begin(), Ex.end(), [&](const Edge &e)
+                                       { return e.id == Erpl.id; });
+
+                if (it != Ex.end())
+                {
+                    Ex.erase(it);
+                    std::cout << "[DEBUG] Replaced edge in Ex: id=" << Erpl.id << std::endl;
+                    deletedIds.insert(Erpl.id);
+                    rebuildtree = true;
+                }
+                else
+                {
+                    std::cerr << "[WARNING] RPL: Edge to be replaced not found in Ex: id=" << Erpl.id << std::endl;
+                }
+
+                // Now insert the new edge
+                auto alreadyPresent = std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e)
+                                                  { return e.id == E.id; });
+                if (!alreadyPresent)
+                {
+                    Ex.push_back(E);
+                    rebuildtree = true;
+                    std::cout << "[DEBUG] Inserted replacement edge into Ex: id=" << E.id << std::endl;
+                }
+
+                // Remove from Er
+                Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                        { return e.id == E.id; }),
+                         Er.end());
+
+                break;
+            }
+            }
+        }
+
+        std::cout << "[DEBUG] ← Process_Status: exiting, CE.size=" << CE.size()
+                  << ", Ex.size=" << Ex.size() << "\n";
+
+        CE.clear();
+
+        Ex.erase(std::remove_if(Ex.begin(), Ex.end(), [](const Edge &e)
+                                { return e.w == INF || e.w == -1; }),
+                 Ex.end());
+
+        Er.erase(std::remove_if(Er.begin(), Er.end(), [](const Edge &e)
+                                { return e.w == INF || e.w == -1; }),
+                 Er.end());
+
+        // Deduplicate Er
+        std::unordered_set<int> seenIds;
+        Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                {
+        if (seenIds.count(e.id)) return true;
+        seenIds.insert(e.id);
+        return false; }),
+                 Er.end());
+
+        // Remove edges marked as deleted
+        Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                { return deletedIds.count(e.id); }),
+                 Er.end());
+
+        if (rebuildtree)
+        {
+            std::cout << "[DEBUG] Rebuilding tree due to changes in Ex" << std::endl;
+            vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
+            Create_Tree(adjEx);
         }
         else
         {
-            // op == false now means “DELETE the edge”
-            Status[i] = EdgeStatus::DEL;
-        }
-    }
-}
-
-
-
-
-void Process_Status(vector<Edge> &CE, vector<EdgeStatus> &Status, vector<Edge> &Marked)
-{
-    std::cout << "[DEBUG] → Process_Status: entering, CE.size="
-              << CE.size() << ", Status.size=" << Status.size()
-              << ", Marked.size=" << Marked.size() << "\n";
-
-    if (Status.size() != CE.size() || Marked.size() != CE.size()) {
-        std::cerr << "[FATAL] Size mismatch in Process_Status" << std::endl;
-        exit(1);
-    }
-
-    bool rebuildtree = false;
-
-    std::unordered_map<int, int> edgeVisitCount;
-
-    for (int i = 0; i < (int)CE.size(); ++i)
-    {
-        Edge &E = CE[i];
-        EdgeStatus S = Status[i];
-
-        edgeVisitCount[E.id]++;
-        if (edgeVisitCount[E.id] > 5) {
-            std::cerr << "[LOOP WARNING] Edge id=" << E.id << " processed > 5 times.\n";
+            std::cout << "[DEBUG] No changes in Ex, no need to rebuild tree" << std::endl;
         }
 
-        std::cout << "[DEBUG] Edge #" << i << " status: " << static_cast<int>(S)
-                  << " (" << E.x << "-" << E.y << ", w=" << E.w << ", id=" << E.id << ")" << std::endl;
-
-        if (deletedIds.count(E.id)) {
-            std::cout << "[DEBUG] Edge id=" << E.id << " already processed. Skipping." << std::endl;
-            continue;
-        }
-
-        switch (S)
+        if (Ex.size() < V - 1 && !Er.empty())
         {
-        case EdgeStatus::DEL:
-        {
-            std::cout << "[DEBUG] Edge marked for deletion" << std::endl;
-            bool deleted = false;
-
-            auto itEx = std::remove_if(Ex.begin(), Ex.end(), [&](const Edge &e) {
-                return e.id == E.id;
-            });
-
-            if (itEx != Ex.end()) {
-                Ex.erase(itEx, Ex.end());
-                rebuildtree = true;
-                deleted = true;
-                std::cout << "[DEBUG] Deleted edge from Ex: id=" << E.id << std::endl;
-            }
-
-            auto itEr = std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-                return e.id == E.id;
-            });
-
-            if (itEr != Er.end()) {
-                Er.erase(itEr, Er.end());
-                deleted = true;
-                std::cout << "[DEBUG] Deleted edge from Er: id=" << E.id << std::endl;
-            }
-
-            if (!deleted) {
-                std::cerr << "[WARNING] No matching edge found for deletion: ("
-                          << E.x << "-" << E.y << ", w=" << E.w << ", id=" << E.id << ")" << std::endl;
-            }
-
-            deletedIds.insert(E.id);
-            break;
+            std::cout << "[DEBUG] Incomplete MST detected. Attempting repair.\n";
+            Repair_Tree(Er, Status, Marked);
         }
 
-        case EdgeStatus::NONE:
-            Er.push_back(E);
-            std::cout << "[DEBUG] Edge moved to remainder edges (Er)" << std::endl;
-            break;
-
-        case EdgeStatus::INS:
-        {
-            bool exists = std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e) {
-                return e.id == E.id;
-            });
-
-            if (exists) {
-                std::cout << "[DEBUG] Edge with id=" << E.id << " already exists in Ex. Skipping insertion.\n";
-            } else {
-                Ex.push_back(E);
-                rebuildtree = true;
-                std::cout << "[DEBUG] Edge inserted into Ex\n";
-            }
-
-            // Remove this edge from Er to prevent reprocessing
-            Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-                return deletedIds.count(e.id) || e.w == INF || e.w == -1;
-            }), Er.end());
-
-            break;
-        }
-
-        case EdgeStatus::RPL:
-{
-    Edge &Erpl = Marked[i];
-
-    std::cout << "[DEBUG] Edge marked for replacement, original id = " << Erpl.id << std::endl;
-
-    if (deletedIds.count(Erpl.id)) {
-        std::cout << "[DEBUG] Replacement target already removed: id=" << Erpl.id << std::endl;
-
-        // Avoid inserting the new edge if old one is already gone
-        Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-            return e.id == E.id;
-        }), Er.end());
-        continue;
+        std::cout << "[DEBUG] Process_Status completed, CE.size = "
+                  << CE.size() << ", Ex.size = " << Ex.size() << std::endl;
     }
 
-    auto it = std::find_if(Ex.begin(), Ex.end(), [&](const Edge &e) {
-        return e.id == Erpl.id;
-    });
-
-    if (it != Ex.end()) {
-        Ex.erase(it);
-        std::cout << "[DEBUG] Replaced edge in Ex: id=" << Erpl.id << std::endl;
-        deletedIds.insert(Erpl.id);
-        rebuildtree = true;
-    } else {
-        std::cerr << "[WARNING] RPL: Edge to be replaced not found in Ex: id=" << Erpl.id << std::endl;
-    }
-
-    // Now insert the new edge
-    auto alreadyPresent = std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e) {
-        return e.id == E.id;
-    });
-    if (!alreadyPresent) {
-        Ex.push_back(E);
-        rebuildtree = true;
-        std::cout << "[DEBUG] Inserted replacement edge into Ex: id=" << E.id << std::endl;
-    }
-
-    // Remove from Er
-    Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-        return e.id == E.id;
-    }), Er.end());
-
-    break;
-}
-
-        }
-    }
-
-    std::cout << "[DEBUG] ← Process_Status: exiting, CE.size=" << CE.size()
-              << ", Ex.size=" << Ex.size() << "\n";
-
-    CE.clear();
-
-    Ex.erase(std::remove_if(Ex.begin(), Ex.end(), [](const Edge &e) {
-        return e.w == INF || e.w == -1;
-    }), Ex.end());
-
-    Er.erase(std::remove_if(Er.begin(), Er.end(), [](const Edge &e) {
-        return e.w == INF || e.w == -1;
-    }), Er.end());
-
-    // Deduplicate Er
-    std::unordered_set<int> seenIds;
-    Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-        if (seenIds.count(e.id)) return true;
-        seenIds.insert(e.id);
-        return false;
-    }), Er.end());
-
-    // Remove edges marked as deleted
-    Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-        return deletedIds.count(e.id);
-    }), Er.end());
-
-    if (rebuildtree)
+    void Repair_Tree(vector<Edge> &Er, vector<EdgeStatus> &Status, vector<Edge> &Marked)
     {
-        std::cout << "[DEBUG] Rebuilding tree due to changes in Ex" << std::endl;
-        vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
-        Create_Tree(adjEx);
-    }
-    else
-    {
-        std::cout << "[DEBUG] No changes in Ex, no need to rebuild tree" << std::endl;
-    }
+        std::cout << "[DEBUG] Repair_Tree called" << std::endl;
 
-    if (Ex.size() < V - 1 && !Er.empty()) {
-    std::cout << "[DEBUG] Incomplete MST detected. Attempting repair.\n";
-    Repair_Tree(Er, Status, Marked);
-}
+        bool changed;
+        int loopCount = 0;
 
-    std::cout << "[DEBUG] Process_Status completed, CE.size = "
-              << CE.size() << ", Ex.size = " << Ex.size() << std::endl;
-}
+        do
+        {
+            changed = false;
 
+            Status.resize(Er.size(), EdgeStatus::NONE);
+            Marked.resize(Er.size());
 
-
-
-void Repair_Tree(vector<Edge> &Er, vector<EdgeStatus> &Status, vector<Edge> &Marked)
-{
-    std::cout << "[DEBUG] Repair_Tree called" << std::endl;
-
-    bool changed;
-    int loopCount = 0;
-
-    do {
-        changed = false;
-
-        Status.resize(Er.size(), EdgeStatus::NONE);
-        Marked.resize(Er.size());
-
-        for (int i = 0; i < (int)Er.size(); i++) {
-            Edge &E = Er[i];
-            int ru = findRoot(E.x), rv = findRoot(E.y);
-            if (ru != rv) {
-                Status[i] = EdgeStatus::INS;
-                changed = true;
-                std::cout << "[DEBUG] Repair candidate: " << E.x << "-" << E.y
-                          << " (w=" << E.w << ", id=" << E.id << ")\n";
-            }
-        }
-
-        if (changed) {
-            Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-                return deletedIds.count(e.id);
-            }), Er.end());
-
-            Process_Status(Er, Status, Marked);
-
-            // Remove processed edges from Er
-            Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e) {
-                return deletedIds.count(e.id) ||
-                       std::any_of(Ex.begin(), Ex.end(), [&](const Edge &ex) { return ex.id == e.id; });
-            }), Er.end());
-        }
-
-        // Fallback repair
-        if (!changed && Ex.size() < V - 1 && !Er.empty()) {
-            std::cout << "[DEBUG] Fallback repair: attempting to reconnect disconnected components.\n";
-            std::sort(Er.begin(), Er.end());  // Try lightest edge first
-            for (auto it = Er.begin(); it != Er.end(); ++it) {
-                Edge &e = *it;
-                int ru = findRoot(e.x), rv = findRoot(e.y);
-                if (ru != rv) {
-                    std::cout << "[DEBUG] Attempting fallback insert: "
-                              << e.x << "-" << e.y << ", w=" << e.w << ", id=" << e.id << "\n";
-                    Ex.push_back(e);
-                    deletedIds.insert(e.id);
-                    Er.erase(it);  // Remove used edge
-                    vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
-                    Create_Tree(adjEx);
+            for (int i = 0; i < (int)Er.size(); i++)
+            {
+                Edge &E = Er[i];
+                int ru = findRoot(E.x), rv = findRoot(E.y);
+                if (ru != rv)
+                {
+                    Status[i] = EdgeStatus::INS;
                     changed = true;
-                    std::cout << "[DEBUG] Successfully repaired by fallback insert: id=" << e.id << "\n";
-                    break;
+                    std::cout << "[DEBUG] Repair candidate: " << E.x << "-" << E.y
+                              << " (w=" << E.w << ", id=" << E.id << ")\n";
+                }
+            }
+
+            if (changed)
+            {
+                Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                        { return deletedIds.count(e.id); }),
+                         Er.end());
+
+                Process_Status(Er, Status, Marked);
+
+                // Remove processed edges from Er
+                Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
+                                        { return deletedIds.count(e.id) ||
+                                                 std::any_of(Ex.begin(), Ex.end(), [&](const Edge &ex)
+                                                             { return ex.id == e.id; }); }),
+                         Er.end());
+            }
+
+            // Fallback repair
+            if (!changed && Ex.size() < V - 1 && !Er.empty())
+            {
+                cout << "[DEBUG] Fallback repair: attempting to reconnect disconnected components.\n";
+                std::sort(Er.begin(), Er.end()); // Try lightest edge first
+
+                for (auto it = Er.begin(); it != Er.end();)
+                {
+                    Edge &e = *it;
+                    if (deletedIds.count(e.id))
+                    {
+                        cout << "[DEBUG] Skipping fallback edge id=" << e.id << " (marked deleted)\n";
+                        ++it;
+                        continue;
+                    }
+
+                    int ru = findRoot(e.x), rv = findRoot(e.y);
+                    if (ru != rv)
+                    {
+                        cout << "[DEBUG] Attempting fallback insert: "
+                             << e.x << "-" << e.y << ", w=" << e.w << ", id=" << e.id << "\n";
+
+                        Ex.push_back(e);
+                        deletedIds.insert(e.id);
+                        it = Er.erase(it);
+
+                        // 🔍 Filter invalid edges before building tree
+                        Ex.erase(std::remove_if(Ex.begin(), Ex.end(), [](const Edge &e)
+                                                { return e.x < 0 || e.y < 0 || e.w <= 0 || e.id < 0; }),
+                                 Ex.end());
+
+                        vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
+                        bool connected = std::any_of(adjEx.begin(), adjEx.end(), [](const auto &nbrs)
+                                                     { return !nbrs.empty(); });
+                        if (!connected)
+                        {
+                            cerr << "[FATAL] Ex has no valid edges to construct a tree. Skipping Create_Tree().\n";
+                            break;
+                        }
+
+                        cout << "[DEBUG] Attempting tree rebuild. Ex.size() = " << Ex.size() << endl;
+                        for (const auto &ex : Ex)
+                        {
+                            cout << "  [EX] Edge: " << ex.x << "-" << ex.y << ", w=" << ex.w << ", id=" << ex.id << endl;
+                        }
+
+                        Create_Tree(adjEx); // Force rebuild tree after insert
+
+                        unordered_set<int> roots;
+                        for (const auto &v : RootedT)
+                            roots.insert(v.root);
+                        cout << "[DEBUG] Components after fallback insert: " << roots.size() << "\n";
+
+                        changed = true;
+
+                        if (Ex.size() >= V - 1)
+                            break; // MST is complete
+
+                        continue; // Try more edges if needed
+                    }
+                    ++it;
+                }
+            }
+
+            loopCount++;
+            if (loopCount > 20)
+            {
+                std::cerr << "[FATAL] Repair_Tree exceeded loop limit. Likely infinite loop. Breaking.\n";
+                break;
+            }
+
+        } while (changed);
+
+        std::cout << "[DEBUG] Repair_Tree completed\n";
+    }
+
+    void ProcessAllEdges(vector<Edge> &CE, vector<bool> &operation)
+    {
+        std::cout << "[DEBUG] ProcessAllEdges called\n";
+
+        if (CE.empty())
+        {
+            std::cout << "[DEBUG] No edges to process\n";
+            return;
+        }
+
+        vector<EdgeStatus> Status;
+        vector<Edge> Marked;
+
+        while (!CE.empty())
+        {
+            std::cout << "[DEBUG] Processing CE loop. CE.size = " << CE.size() << "\n";
+
+            // Step 1: Assign default statuses
+            Status.assign(CE.size(), EdgeStatus::NONE);
+            Marked.assign(CE.size(), Edge());
+
+            // Step 2: Classify edges (no operation[] here!)
+            Classify_Edges(CE, Status, Marked, operation); // correct for your code
+
+            // Step 3: Filter out deleted edges before processing
+            CE.erase(std::remove_if(CE.begin(), CE.end(), [&](const Edge &e)
+                                    { return deletedIds.count(e.id); }),
+                     CE.end());
+
+            std::vector<bool> newOp;
+            for (int i = 0, j = 0; i < operation.size(); ++i)
+            {
+                if (!deletedIds.count(CE[i].id))
+                {
+                    newOp.push_back(operation[i]);
+                }
+            }
+            operation = std::move(newOp);
+
+            // Keep auxiliary vectors in sync
+            operation.resize(CE.size());
+            Status.resize(CE.size());
+            Marked.resize(CE.size());
+
+            // Step 4: Process status changes
+            Process_Status(CE, Status, Marked);
+
+            // Step 5: Remove from CE any edges that were:
+            // - Deleted
+            // - Already inserted into Ex
+            CE.erase(std::remove_if(CE.begin(), CE.end(), [&](const Edge &e)
+                                    { return deletedIds.count(e.id) ||
+                                             std::any_of(Ex.begin(), Ex.end(), [&](const Edge &ex)
+                                                         { return ex.id == e.id; }); }),
+                     CE.end());
+
+            // Step 6: Resize 'operation' to match CE size again
+            operation.resize(CE.size());
+        }
+
+        // Final sanity check
+        if (Ex.size() > V - 1)
+        {
+            std::cerr << "[ERROR] MST has too many edges: Ex.size = " << Ex.size()
+                      << ", expected = " << (V - 1) << std::endl;
+        }
+
+        std::cout << "[DEBUG] ProcessAllEdges completed. Ex.size = " << Ex.size() << "\n";
+    }
+
+    void updateNode(int id, int x, int y, int w, OperationType op)
+    {
+        cout << "[DEBUG] updateNode called with id = " << id << ", x = " << x << ", y = " << y
+             << ", w = " << w << ", op = " << (op == OperationType::INSERT ? "INSERT" : "DELETE") << endl;
+
+        // Skip redundant deletes
+        if (op == OperationType::DELETE && deletedIds.count(id))
+        {
+            cout << "[DEBUG] Skipping updateNode: edge id=" << id << " already deleted\n";
+            return;
+        }
+
+        // Skip duplicate inserts
+        if (op == OperationType::INSERT)
+        {
+            for (const auto &e : Ex)
+            {
+                if (e.id == id)
+                {
+                    cout << "[INFO] Edge already exists in Ex, skipping insertion: id = " << id << endl;
+                    return;
                 }
             }
         }
 
-        loopCount++;
-        if (loopCount > 20) {
-            std::cerr << "[FATAL] Repair_Tree exceeded loop limit. Likely infinite loop. Breaking.\n";
-            break;
-        }
-
-    } while (changed);
-
-    std::cout << "[DEBUG] Repair_Tree completed\n";
-}
-
-
-
-void ProcessAllEdges(vector<Edge> &CE, vector<bool> &operation)
-{
-    std::cout << "[DEBUG] ProcessAllEdges called\n";
-
-    if (CE.empty()) {
-        std::cout << "[DEBUG] No edges to process\n";
-        return;
-    }
-
-    vector<EdgeStatus> Status;
-    vector<Edge> Marked;
-
-    while (!CE.empty())
-    {
-        std::cout << "[DEBUG] Processing CE loop. CE.size = " << CE.size() << "\n";
-
-        // Step 1: Assign default statuses
-        Status.assign(CE.size(), EdgeStatus::NONE);
-        Marked.assign(CE.size(), Edge());
-
-        // Step 2: Classify edges (no operation[] here!)
-        Classify_Edges(CE, Status, Marked, operation);   // correct for your code
-
-        // Step 3: Filter out deleted edges before processing
-        CE.erase(std::remove_if(CE.begin(), CE.end(), [&](const Edge &e) {
-            return deletedIds.count(e.id);
-        }), CE.end());
-
-        // Keep auxiliary vectors in sync
-        operation.resize(CE.size());
-        Status.resize(CE.size());
-        Marked.resize(CE.size());
-
-        // Step 4: Process status changes
-        Process_Status(CE, Status, Marked);
-
-        // Step 5: Remove from CE any edges that were:
-        // - Deleted
-        // - Already inserted into Ex
-        CE.erase(std::remove_if(CE.begin(), CE.end(), [&](const Edge &e) {
-            return deletedIds.count(e.id) ||
-                   std::any_of(Ex.begin(), Ex.end(), [&](const Edge &ex) {
-                       return ex.id == e.id;
-                   });
-        }), CE.end());
-
-        // Step 6: Resize 'operation' to match CE size again
-        operation.resize(CE.size());
-    }
-
-    // Final sanity check
-    if (Ex.size() > V - 1) {
-        std::cerr << "[ERROR] MST has too many edges: Ex.size = " << Ex.size()
-                  << ", expected = " << (V - 1) << std::endl;
-    }
-
-    std::cout << "[DEBUG] ProcessAllEdges completed. Ex.size = " << Ex.size() << "\n";
-}
-
-
-
-
-
-    void updateNode(int id, int x, int y, int w, OperationType op)
-    {
-        cout << "[DEBUG] updateNode called with id = " << id << ", x = " << x << ", y = " << y << ", w = " << w << ", op = " << (op == OperationType::INSERT ? "INSERT" : "DELETE")<< endl;
-        if (deletedIds.count(id)) {
-    std::cout << "[DEBUG] Edge id=" << id << " already deleted. Skipping update.\n";
-    return;
-}
-        
-        for (const auto &e : Ex) {
-            if (e.id == id && (e.w == INF || e.w == -1)) {
-                cout << "[WARNING] Attempt to update already deleted edge id = " << id << endl;
-                return; // Skip processing
+        // Optional warning for delete of nonexistent edge
+        if (op == OperationType::DELETE)
+        {
+            bool found = false;
+            for (const auto &e : Ex)
+                if (e.id == id)
+                {
+                    found = true;
+                    break;
+                }
+            for (const auto &e : Er)
+                if (e.id == id)
+                {
+                    found = true;
+                    break;
+                }
+            if (!found)
+            {
+                cout << "[WARNING] Tried to delete non-existent edge id = " << id << endl;
             }
         }
 
-        if (op==OperationType::INSERT) { // insertion
-        for (const auto &e : Ex) {
-            if (e.id == id) {
-                cout << "[INFO] Edge already exists in Ex, skipping insertion: id = " << id << endl;
-                return;
-            }
-        }
-    }
-        // Create a new edge with the given parameters
+        // Schedule the edge operation
         vector<Edge> CE(1, Edge(x, y, w, id));
-        vector<bool> operation(1, op==OperationType::INSERT); // true for insert, false for delete
+        vector<bool> operation(1, op == OperationType::INSERT);
         ProcessAllEdges(CE, operation);
     }
-
 };
 
 // Disjoint Set Union-Find with path compression and union by rank
@@ -774,7 +887,6 @@ public:
             parent[i] = i;
     }
 
-
     int find(int x)
     {
         if (parent[x] != x)
@@ -782,11 +894,11 @@ public:
         return parent[x];
     }
 
-
     bool union_sets(int x, int y)
     {
         int rootX = find(x), rootY = find(y);
-        if (rootX == rootY) return false;
+        if (rootX == rootY)
+            return false;
 
         if (rank[rootX] > rank[rootY])
             parent[rootY] = rootX;
@@ -822,17 +934,15 @@ pair<vector<Edge>, vector<Edge>> findMST(vector<Edge> &edges, int n)
     return {Ex, Er};
 }
 
-
-const int T = 50011; //Timeline size
-const int Tc = sqrt(T) + 10; //Timeline size for block decomposition (+10 for optimisation and incase N is small +10 reduces complications)
+const int T = 50011;         // Timeline size
+const int Tc = sqrt(T) + 10; // Timeline size for block decomposition (+10 for optimisation and incase N is small +10 reduces complications)
 
 // Global variables
-int tp;             //Key Blocks of Timeline
-int n;              // Number of nodes
-int m;              // Number of edges
-int q;              // Number of queries
+int tp; // Key Blocks of Timeline
+int n;  // Number of nodes
+int m;  // Number of edges
+int q;  // Number of queries
 vector<vector<pair<Edge, OperationType>>> que;
-
 
 vector<Edge> getMST(int t, vector<RootedTree> &rt)
 {
@@ -877,11 +987,33 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
             for (int j = 0; j < que[i].size(); ++j)
             {
                 const auto &entry = que[i][j];
+
+                // DELETE already handled
+                if (entry.second == OperationType::DELETE &&
+                    rt[bkt].deletedIds.count(entry.first.id))
+                {
+                    cout << "[DEBUG] Skipping already deleted edge id = " << entry.first.id << " from que[" << i << "]" << endl;
+                    continue;
+                }
+
+                // INSERT already in Ex
+                if (entry.second == OperationType::INSERT)
+                {
+                    auto &Ex = rt[bkt].Ex;
+                    if (std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e)
+                                    { return e.id == entry.first.id; }))
+                    {
+                        cout << "[DEBUG] Skipping already inserted edge id = " << entry.first.id << " from que[" << i << "]" << endl;
+                        continue;
+                    }
+                }
+
+                // Passed filters — schedule it
                 CE.push_back(entry.first);
                 operation.push_back(entry.second == OperationType::INSERT);
                 cout << "  [DEBUG] Scheduled " << (entry.second == OperationType::INSERT ? "INSERT" : "DELETE")
                      << " of edge (" << entry.first.x << ", " << entry.first.y
-                     << ", w=" << entry.first.w << ")" << endl;
+                     << ", w=" << entry.first.w << ", id=" << entry.first.id << ")" << endl;
             }
         }
     }
@@ -889,14 +1021,13 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
     cout << "[DEBUG] Total edges to process: " << CE.size() << endl;
 
     rt[bkt].ProcessAllEdges(CE, operation);
-    vector<Edge> mst = rt[bkt].Ex;  // ← fetch the MST after processing
+    vector<Edge> mst = rt[bkt].Ex; // ← fetch the MST after processing
 
     cout << "[DEBUG] getMST returning MST with " << mst.size() << " edges." << endl;
     return mst;
 }
 
-
- void addAndDeleteEdge(int x, int y, int w, int t, int id,
+void addAndDeleteEdge(int x, int y, int w, int t, int id,
                       vector<RootedTree> &rt, OperationType op)
 {
     cout << "[DEBUG] addAndDeleteEdge called with x=" << x
@@ -910,10 +1041,15 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
     }
 
     if ((int)que.size() <= t)
-        que.resize(T);  // Ensure que is large enough
+        que.resize(T); // Ensure que is large enough
 
     // Schedule for the query-time algorithm
-    que[t].push_back({ Edge(x, y, w, id), op });
+    if (op == OperationType::DELETE && rt[0].deletedIds.count(id))
+    {
+        cout << "[DEBUG] Skipping already deleted edge id = " << id << " at time " << t << endl;
+        return;
+    }
+    que[t].push_back({Edge(x, y, w, id), op});
 
     int block = t / Tc;
     for (int b = block; b < (int)rt.size(); ++b)
@@ -924,19 +1060,18 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
     cout << "[DEBUG] addAndDeleteEdge completed\n";
 }
 
-
-
-
 int main()
 {
     // Start measuring time
     clock_t tStart = clock();
-    ///freopen("debug_output.txt", "w", stdout);
+    //freopen("debug_output.txt", "w", stdout);
+    //std::cerr.rdbuf(std::cout.rdbuf());
     cout << "Timer started: " << tStart << endl;
 
     // Read input from file
     std::ifstream infile("C:\\Personal\\Studies\\Projects\\Parallel and Concurrent DS\\retro_rooted-main\\in000");
-    if (!infile.is_open()) {
+    if (!infile.is_open())
+    {
         cerr << "Error opening input file." << endl;
         return 1;
     }
@@ -949,7 +1084,8 @@ int main()
     vector<RootedTree> RT(tp, RootedTree(n));
 
     // Load original edges and build base MST in RT[0]
-    for (int i = 0; i < m; ++i) {
+    for (int i = 0; i < m; ++i)
+    {
         int x, y, w;
         infile >> x >> y >> w;
         edges[i] = Edge(--x, --y, w, i);
@@ -963,24 +1099,28 @@ int main()
     RT[0].Create_Tree(adjEx_0);
 
     // Copy block 0’s state into all subsequent blocks
-    for (int b = 1; b < tp; ++b) {
+    for (int b = 1; b < tp; ++b)
+    {
         RT[b] = RootedTree(RT[b - 1]);
     }
 
     int queryId = n + m;
     const int totalQueries = 5;
 
-    for (int qi = 0; qi < totalQueries; ++qi) {
+    for (int qi = 0; qi < totalQueries; ++qi)
+    {
         int op;
         cout << "\nEnter operation (0 = MST query, 1 = Add Edge, 2 = Delete Edge): ";
         cin >> op;
 
-        if (op == 0) {
+        if (op == 0)
+        {
             // — MST query at time t
             int t;
             cout << "Enter time t to query MST: ";
             cin >> t;
-            if (t < 0 || t >= T) {
+            if (t < 0 || t >= T)
+            {
                 cout << "[ERROR] Invalid time t = " << t << ". Must be in [0, " << T - 1 << "]" << endl;
                 --qi;
                 continue;
@@ -988,53 +1128,70 @@ int main()
             cout << "[DEBUG] Performing MST query at time " << t << endl;
             vector<Edge> mst = getMST(t, RT);
 
+            if (mst.empty())
+            {
+                cout << "[WARNING] MST is empty at time t = " << t << ". The graph may be disconnected or no valid edges exist.\n";
+                continue;
+            }
+
             double sum = 0.0;
-            for (auto &e : mst) {
+            for (auto &e : mst)
+            {
                 sum += e.w;
                 cout << "[MST] Edge: " << e.x << "-" << e.y << ", w=" << e.w << ", id=" << e.id << endl;
             }
             cout << "MST weight: " << sum << endl;
         }
-        else if (op == 1 || op == 2) {
+        else if (op == 1 || op == 2)
+        {
             // — Add or Delete an edge
             int x, y, w, t;
             cout << "Enter x y weight w and time t: ";
             cin >> x >> y >> w >> t;
-            if (t < 0 || t >= T) {
+            if (t < 0 || t >= T)
+            {
                 cout << "[ERROR] Invalid time t = " << t << ". Must be in [0, " << T - 1 << "]" << endl;
                 --qi;
                 continue;
             }
 
-            x--; 
+            x--;
             y--;
             bool isInsert = (op == 1);
             int realId = queryId;
 
-            if (!isInsert) {
+            if (!isInsert)
+            {
                 // — Deletion: scan every block RT[i] to find matching (x,y,w)
                 bool found = false;
-                for (int b = 0; b < tp && !found; ++b) {
+                for (int b = 0; b < tp && !found; ++b)
+                {
                     // scan Ex in block b
-                    for (auto &e : RT[b].Ex) {
-                        if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && e.w == w) {
+                    for (auto &e : RT[b].Ex)
+                    {
+                        if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && e.w == w)
+                        {
                             realId = e.id;
                             found = true;
                             break;
                         }
                     }
-                    if (found) break;
+                    if (found)
+                        break;
                     // scan Er in block b
-                    for (auto &e : RT[b].Er) {
-                        if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && e.w == w) {
+                    for (auto &e : RT[b].Er)
+                    {
+                        if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && e.w == w)
+                        {
                             realId = e.id;
                             found = true;
                             break;
                         }
                     }
                 }
-                if (!found) {
-                    cout << "[WARNING] Could not find edge (" 
+                if (!found)
+                {
+                    cout << "[WARNING] Could not find edge ("
                          << x << "-" << y << ", w=" << w << ") in any RT[].Ex or RT[].Er." << endl;
                 }
             }
@@ -1044,7 +1201,8 @@ int main()
             addAndDeleteEdge(x, y, w, t, realId, RT, opType);
             queryId++;
         }
-        else {
+        else
+        {
             cout << "[ERROR] Invalid operation type. Must be 0, 1, or 2." << endl;
             --qi;
         }
@@ -1053,11 +1211,6 @@ int main()
     printf("Execution Time: %.2fs\n", (double)(clock() - tStart) / CLOCKS_PER_SEC);
     return 0;
 }
-
-
-
-
-
 
 /*Sample Input:
 20 40 10
@@ -1111,4 +1264,4 @@ int main()
 0 3
 0 8
 0 2
-*/
+    */
