@@ -51,6 +51,67 @@ enum class OperationType
     DELETE = 1
 };
 
+// Disjoint Set Union-Find with path compression and union by rank
+class DSU
+{
+public:
+    vector<int> parent, rank;
+
+    DSU(int n)
+    {
+        parent.resize(n);
+        rank.resize(n, 0);
+        for (int i = 0; i < n; ++i)
+            parent[i] = i;
+    }
+
+    int find(int x)
+    {
+        if (parent[x] != x)
+            parent[x] = find(parent[x]);
+        return parent[x];
+    }
+
+    bool union_sets(int x, int y)
+    {
+        int rootX = find(x), rootY = find(y);
+        if (rootX == rootY)
+            return false;
+
+        if (rank[rootX] > rank[rootY])
+            parent[rootY] = rootX;
+        else if (rank[rootX] < rank[rootY])
+            parent[rootX] = rootY;
+        else
+        {
+            parent[rootY] = rootX;
+            rank[rootX]++;
+        }
+        return true;
+    }
+};
+
+// Function to find the MST and divide edges into Ex and Er
+pair<vector<Edge>, vector<Edge>> findMST(vector<Edge> &edges, int n)
+{
+    sort(edges.begin(), edges.end()); // Requires Edge::operator<
+
+    DSU dsu(n);
+    vector<Edge> Ex, Er;
+    int edgeCounter = 0;
+
+    for (Edge &edge : edges)
+    {
+        edge.id = edgeCounter++;
+        if (dsu.union_sets(edge.x, edge.y))
+            Ex.push_back(edge);
+        else
+            Er.push_back(edge);
+    }
+
+    return {Ex, Er};
+}
+
 int findMinHeightVertex(vector<vector<pair<int, int>>> &adjEx, vector<bool> &visited, int start)
 {
     int V = adjEx.size();
@@ -540,7 +601,6 @@ public:
                 {
                     std::cout << "[DEBUG] Replacement target already removed: id=" << Erpl.id << std::endl;
 
-                    // Avoid inserting the new edge if old one is already gone
                     Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
                                             { return e.id == E.id; }),
                              Er.end());
@@ -553,16 +613,18 @@ public:
                 if (it != Ex.end())
                 {
                     Ex.erase(it);
-                    std::cout << "[DEBUG] Replaced edge in Ex: id=" << Erpl.id << std::endl;
                     deletedIds.insert(Erpl.id);
                     rebuildtree = true;
+
+                    // Add replaced edge to Er
+                    Er.push_back(Erpl);
+                    std::cout << "[DEBUG] Replaced edge moved to Er: id=" << Erpl.id << std::endl;
                 }
                 else
                 {
                     std::cerr << "[WARNING] RPL: Edge to be replaced not found in Ex: id=" << Erpl.id << std::endl;
                 }
 
-                // Now insert the new edge
                 auto alreadyPresent = std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e)
                                                   { return e.id == E.id; });
                 if (!alreadyPresent)
@@ -572,7 +634,6 @@ public:
                     std::cout << "[DEBUG] Inserted replacement edge into Ex: id=" << E.id << std::endl;
                 }
 
-                // Remove from Er
                 Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
                                         { return e.id == E.id; }),
                          Er.end());
@@ -595,7 +656,6 @@ public:
                                 { return e.w == INF || e.w == -1; }),
                  Er.end());
 
-        // Deduplicate Er
         std::unordered_set<int> seenIds;
         Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
                                 {
@@ -604,7 +664,6 @@ public:
         return false; }),
                  Er.end());
 
-        // Remove edges marked as deleted
         Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
                                 { return deletedIds.count(e.id); }),
                  Er.end());
@@ -673,67 +732,34 @@ public:
                          Er.end());
             }
 
-            // Fallback repair
-            if (!changed && Ex.size() < V - 1 && !Er.empty())
+            // Final fallback using global MST strategy if Ex is still incomplete
+            if (Ex.size() < V - 1)
             {
-                cout << "[DEBUG] Fallback repair: attempting to reconnect disconnected components.\n";
-                std::sort(Er.begin(), Er.end()); // Try lightest edge first
+                cout << "[DEBUG] Final fallback: building MST from remaining Er\n";
+                vector<Edge> tempEdges = Ex;
 
-                for (auto it = Er.begin(); it != Er.end();)
+                // Use only valid and undeleted edges
+                for (const Edge &e : Er)
                 {
-                    Edge &e = *it;
-                    if (deletedIds.count(e.id))
-                    {
-                        cout << "[DEBUG] Skipping fallback edge id=" << e.id << " (marked deleted)\n";
-                        ++it;
-                        continue;
-                    }
+                    if (e.w != INF && !deletedIds.count(e.id))
+                        tempEdges.push_back(e);
+                }
 
-                    int ru = findRoot(e.x), rv = findRoot(e.y);
-                    if (ru != rv)
-                    {
-                        cout << "[DEBUG] Attempting fallback insert: "
-                             << e.x << "-" << e.y << ", w=" << e.w << ", id=" << e.id << "\n";
+                auto [newEx, newEr] = findMST(tempEdges, V);
 
-                        Ex.push_back(e);
-                        deletedIds.insert(e.id);
-                        it = Er.erase(it);
+                // Only adopt new MST if it connects all components
+                if (newEx.size() >= V - 1)
+                {
+                    cout << "[DEBUG] Final MST rebuild successful with " << newEx.size() << " edges\n";
+                    Ex = newEx;
+                    Er = newEr;
 
-                        // 🔍 Filter invalid edges before building tree
-                        Ex.erase(std::remove_if(Ex.begin(), Ex.end(), [](const Edge &e)
-                                                { return e.x < 0 || e.y < 0 || e.w <= 0 || e.id < 0; }),
-                                 Ex.end());
-
-                        vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
-                        bool connected = std::any_of(adjEx.begin(), adjEx.end(), [](const auto &nbrs)
-                                                     { return !nbrs.empty(); });
-                        if (!connected)
-                        {
-                            cerr << "[FATAL] Ex has no valid edges to construct a tree. Skipping Create_Tree().\n";
-                            break;
-                        }
-
-                        cout << "[DEBUG] Attempting tree rebuild. Ex.size() = " << Ex.size() << endl;
-                        for (const auto &ex : Ex)
-                        {
-                            cout << "  [EX] Edge: " << ex.x << "-" << ex.y << ", w=" << ex.w << ", id=" << ex.id << endl;
-                        }
-
-                        Create_Tree(adjEx); // Force rebuild tree after insert
-
-                        unordered_set<int> roots;
-                        for (const auto &v : RootedT)
-                            roots.insert(v.root);
-                        cout << "[DEBUG] Components after fallback insert: " << roots.size() << "\n";
-
-                        changed = true;
-
-                        if (Ex.size() >= V - 1)
-                            break; // MST is complete
-
-                        continue; // Try more edges if needed
-                    }
-                    ++it;
+                    vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
+                    Create_Tree(adjEx);
+                }
+                else
+                {
+                    cerr << "[ERROR] Final MST rebuild failed to connect all nodes\n";
                 }
             }
 
@@ -873,67 +899,6 @@ public:
     }
 };
 
-// Disjoint Set Union-Find with path compression and union by rank
-class DSU
-{
-public:
-    vector<int> parent, rank;
-
-    DSU(int n)
-    {
-        parent.resize(n);
-        rank.resize(n, 0);
-        for (int i = 0; i < n; ++i)
-            parent[i] = i;
-    }
-
-    int find(int x)
-    {
-        if (parent[x] != x)
-            parent[x] = find(parent[x]);
-        return parent[x];
-    }
-
-    bool union_sets(int x, int y)
-    {
-        int rootX = find(x), rootY = find(y);
-        if (rootX == rootY)
-            return false;
-
-        if (rank[rootX] > rank[rootY])
-            parent[rootY] = rootX;
-        else if (rank[rootX] < rank[rootY])
-            parent[rootX] = rootY;
-        else
-        {
-            parent[rootY] = rootX;
-            rank[rootX]++;
-        }
-        return true;
-    }
-};
-
-// Function to find the MST and divide edges into Ex and Er
-pair<vector<Edge>, vector<Edge>> findMST(vector<Edge> &edges, int n)
-{
-    sort(edges.begin(), edges.end()); // Requires Edge::operator<
-
-    DSU dsu(n);
-    vector<Edge> Ex, Er;
-    int edgeCounter = 0;
-
-    for (Edge &edge : edges)
-    {
-        edge.id = edgeCounter++;
-        if (dsu.union_sets(edge.x, edge.y))
-            Ex.push_back(edge);
-        else
-            Er.push_back(edge);
-    }
-
-    return {Ex, Er};
-}
-
 const int T = 50011;         // Timeline size
 const int Tc = sqrt(T) + 10; // Timeline size for block decomposition (+10 for optimisation and incase N is small +10 reduces complications)
 
@@ -1064,8 +1029,8 @@ int main()
 {
     // Start measuring time
     clock_t tStart = clock();
-    //freopen("debug_output.txt", "w", stdout);
-    //std::cerr.rdbuf(std::cout.rdbuf());
+    // freopen("debug_output.txt", "w", stdout);
+    // std::cerr.rdbuf(std::cout.rdbuf());
     cout << "Timer started: " << tStart << endl;
 
     // Read input from file
