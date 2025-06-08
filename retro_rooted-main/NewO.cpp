@@ -1,6 +1,6 @@
 #include <bits/stdc++.h>
 using namespace std;
-const double INF = 1e15;
+const double INF = 100000;
 
 struct Edge
 {
@@ -94,13 +94,20 @@ public:
 // Function to find the MST and divide edges into Ex and Er
 pair<vector<Edge>, vector<Edge>> findMST(vector<Edge> &edges, int n)
 {
-    sort(edges.begin(), edges.end()); // Requires Edge::operator<
+    vector<Edge> filtered;
+    for (Edge &e : edges)
+    {
+        if (e.w != INF)
+            filtered.push_back(e);
+    }
+
+    sort(filtered.begin(), filtered.end());
 
     DSU dsu(n);
     vector<Edge> Ex, Er;
     int edgeCounter = 0;
 
-    for (Edge &edge : edges)
+    for (Edge &edge : filtered)
     {
         edge.id = edgeCounter++;
         if (dsu.union_sets(edge.x, edge.y))
@@ -496,7 +503,6 @@ public:
         }
 
         bool rebuildtree = false;
-
         std::unordered_map<int, int> edgeVisitCount;
 
         for (int i = 0; i < (int)CE.size(); ++i)
@@ -526,38 +532,64 @@ public:
                 std::cout << "[DEBUG] Edge marked for deletion" << std::endl;
 
                 bool found = false;
+                auto matchEdge = [&](Edge &e)
+                {
+                    return (e.id == E.id) ||
+                           ((e.x == E.x && e.y == E.y) || (e.x == E.y && e.y == E.x));
+                };
 
+                // Set weight to INF in Ex or Er
                 for (Edge &e : Ex)
                 {
-                    if (e.id == E.id)
+                    if (matchEdge(e) && !deletedIds.count(e.id))
                     {
                         e.w = INF;
                         found = true;
-                        rebuildtree = true;
-                        std::cout << "[DEBUG] Set weight to INF for edge in Ex: id=" << E.id << std::endl;
+                        deletedIds.insert(e.id);
+                        std::cout << "[DEBUG] Set weight to INF for edge in Ex: id=" << e.id << std::endl;
                         break;
                     }
                 }
 
                 for (Edge &e : Er)
                 {
-                    if (e.id == E.id)
+                    if (matchEdge(e) && !deletedIds.count(e.id))
                     {
                         e.w = INF;
                         found = true;
-                        std::cout << "[DEBUG] Set weight to INF for edge in Er: id=" << E.id << std::endl;
+                        deletedIds.insert(e.id);
+                        std::cout << "[DEBUG] Set weight to INF for edge in Er: id=" << e.id << std::endl;
                         break;
                     }
                 }
 
                 if (!found)
                 {
-                    std::cerr << "[WARNING] Delete called but edge not found: id=" << E.id << "\n";
+                    std::cerr << "[WARNING] Delete failed: Edge not found in Ex or Er. "
+                              << "Trying to delete edge (" << E.x << "-" << E.y << ", w=" << E.w << ", id=" << E.id << ")\n";
                 }
-                else
+
+                // Recompute MST using remaining valid edges
+                std::vector<Edge> combined;
+
+                for (Edge &e : Ex)
                 {
-                    deletedIds.insert(E.id);
+                    if (e.w != INF && !deletedIds.count(e.id))
+                        combined.push_back(e);
                 }
+
+                for (Edge &e : Er)
+                {
+                    if (e.w != INF && !deletedIds.count(e.id))
+                        combined.push_back(e);
+                }
+
+                std::tie(Ex, Er) = findMST(combined, V);
+
+                std::vector<std::vector<std::pair<int, int>>> adjEx = buildExAdj(Ex, V);
+                Create_Tree(adjEx);
+
+                std::cout << "[DEBUG] Rebuilding tree due to deletion and MST recomputation\n";
 
                 break;
             }
@@ -583,110 +615,58 @@ public:
                     std::cout << "[DEBUG] Edge inserted into Ex\n";
                 }
 
-                // Remove this edge from Er to prevent reprocessing
-                Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
-                                        { return deletedIds.count(e.id) || e.w == INF || e.w == -1; }),
-                         Er.end());
-
                 break;
             }
 
             case EdgeStatus::RPL:
             {
                 Edge &Erpl = Marked[i];
-
                 std::cout << "[DEBUG] Edge marked for replacement, original id = " << Erpl.id << std::endl;
 
                 if (deletedIds.count(Erpl.id))
                 {
                     std::cout << "[DEBUG] Replacement target already removed: id=" << Erpl.id << std::endl;
-
-                    Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
-                                            { return e.id == E.id; }),
-                             Er.end());
                     continue;
                 }
 
-                auto it = std::find_if(Ex.begin(), Ex.end(), [&](const Edge &e)
-                                       { return e.id == Erpl.id; });
-
-                if (it != Ex.end())
+                // Replace edge in Ex (remove old, insert new)
+                if (Erpl.replacedId >= 0 && Erpl.replacedId < (int)Ex.size())
                 {
-                    Ex.erase(it);
-                    deletedIds.insert(Erpl.id);
+                    Ex.erase(Ex.begin() + Erpl.replacedId);
+                    Ex.push_back(E);
                     rebuildtree = true;
-
-                    // Add replaced edge to Er
-                    Er.push_back(Erpl);
-                    std::cout << "[DEBUG] Replaced edge moved to Er: id=" << Erpl.id << std::endl;
+                    std::cout << "[DEBUG] Replacement complete: Removed id = " << Erpl.id << ", Inserted id = " << E.id << std::endl;
                 }
                 else
                 {
-                    std::cerr << "[WARNING] RPL: Edge to be replaced not found in Ex: id=" << Erpl.id << std::endl;
+                    std::cerr << "[ERROR] Invalid replacedId for edge: " << Erpl.replacedId << std::endl;
                 }
 
-                auto alreadyPresent = std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e)
-                                                  { return e.id == E.id; });
-                if (!alreadyPresent)
-                {
-                    Ex.push_back(E);
-                    rebuildtree = true;
-                    std::cout << "[DEBUG] Inserted replacement edge into Ex: id=" << E.id << std::endl;
-                }
-
-                Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
-                                        { return e.id == E.id; }),
-                         Er.end());
-
+                // Do NOT mark Erpl deleted — keep it in Er until explicitly deleted
+                Er.push_back(Erpl);
+                if (Erpl.w != INF && !deletedIds.count(Erpl.id))
+                    Er.push_back(Erpl);
                 break;
             }
+
+            default:
+                break;
             }
         }
 
-        std::cout << "[DEBUG] ← Process_Status: exiting, CE.size=" << CE.size()
-                  << ", Ex.size=" << Ex.size() << "\n";
-
-        CE.clear();
-
-        Ex.erase(std::remove_if(Ex.begin(), Ex.end(), [](const Edge &e)
-                                { return e.w == INF || e.w == -1; }),
-                 Ex.end());
-
-        Er.erase(std::remove_if(Er.begin(), Er.end(), [](const Edge &e)
-                                { return e.w == INF || e.w == -1; }),
-                 Er.end());
-
-        std::unordered_set<int> seenIds;
+        // Clean up Er (only remove explicitly deleted or invalid edges)
         Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
-                                {
-        if (seenIds.count(e.id)) return true;
-        seenIds.insert(e.id);
-        return false; }),
-                 Er.end());
-
-        Er.erase(std::remove_if(Er.begin(), Er.end(), [&](const Edge &e)
-                                { return deletedIds.count(e.id); }),
+                                { return deletedIds.count(e.id) || e.w == INF || e.w == -1; }),
                  Er.end());
 
         if (rebuildtree)
         {
-            std::cout << "[DEBUG] Rebuilding tree due to changes in Ex" << std::endl;
-            vector<vector<pair<int, int>>> adjEx = buildExAdj(Ex, V);
+            std::vector<std::vector<std::pair<int, int>>> adjEx = buildExAdj(Ex, V);
             Create_Tree(adjEx);
-        }
-        else
-        {
-            std::cout << "[DEBUG] No changes in Ex, no need to rebuild tree" << std::endl;
+            std::cout << "[DEBUG] Rebuilding tree due to changes in Ex\n";
         }
 
-        if (Ex.size() < V - 1 && !Er.empty())
-        {
-            std::cout << "[DEBUG] Incomplete MST detected. Attempting repair.\n";
-            Repair_Tree(Er, Status, Marked);
-        }
-
-        std::cout << "[DEBUG] Process_Status completed, CE.size = "
-                  << CE.size() << ", Ex.size = " << Ex.size() << std::endl;
+        std::cout << "[DEBUG] Process_Status completed, CE.size = " << CE.size() << ", Ex.size = " << Ex.size() << "\n";
     }
 
     void Repair_Tree(vector<Edge> &Er, vector<EdgeStatus> &Status, vector<Edge> &Marked)
@@ -736,9 +716,15 @@ public:
             if (Ex.size() < V - 1)
             {
                 cout << "[DEBUG] Final fallback: building MST from remaining Er\n";
-                vector<Edge> tempEdges = Ex;
+                vector<Edge> tempEdges;
 
-                // Use only valid and undeleted edges
+                // Exclude INF-weighted and deleted edges from both Ex and Er
+                for (const Edge &e : Ex)
+                {
+                    if (e.w != INF && !deletedIds.count(e.id))
+                        tempEdges.push_back(e);
+                }
+
                 for (const Edge &e : Er)
                 {
                     if (e.w != INF && !deletedIds.count(e.id))
@@ -774,7 +760,6 @@ public:
 
         std::cout << "[DEBUG] Repair_Tree completed\n";
     }
-
     void ProcessAllEdges(vector<Edge> &CE, vector<bool> &operation)
     {
         std::cout << "[DEBUG] ProcessAllEdges called\n";
@@ -796,8 +781,8 @@ public:
             Status.assign(CE.size(), EdgeStatus::NONE);
             Marked.assign(CE.size(), Edge());
 
-            // Step 2: Classify edges (no operation[] here!)
-            Classify_Edges(CE, Status, Marked, operation); // correct for your code
+            // Step 2: Classify edges
+            Classify_Edges(CE, Status, Marked, operation);
 
             // Step 3: Filter out deleted edges before processing
             CE.erase(std::remove_if(CE.begin(), CE.end(), [&](const Edge &e)
@@ -835,11 +820,23 @@ public:
             operation.resize(CE.size());
         }
 
+        CE.clear();
+        operation.clear();
+
         // Final sanity check
         if (Ex.size() > V - 1)
         {
             std::cerr << "[ERROR] MST has too many edges: Ex.size = " << Ex.size()
                       << ", expected = " << (V - 1) << std::endl;
+        }
+
+        // NEW: Final repair to ensure connectivity
+        if (Ex.size() < V - 1)
+        {
+            std::cout << "[DEBUG] Final MST repair triggered from ProcessAllEdges()\n";
+            vector<EdgeStatus> dummyStatus;
+            vector<Edge> dummyMarked;
+            Repair_Tree(Er, dummyStatus, dummyMarked);
         }
 
         std::cout << "[DEBUG] ProcessAllEdges completed. Ex.size = " << Ex.size() << "\n";
@@ -1029,8 +1026,8 @@ int main()
 {
     // Start measuring time
     clock_t tStart = clock();
-    // freopen("debug_output.txt", "w", stdout);
-    // std::cerr.rdbuf(std::cout.rdbuf());
+    //freopen("debug_output.txt", "w", stdout);
+    //std::cerr.rdbuf(std::cout.rdbuf());
     cout << "Timer started: " << tStart << endl;
 
     // Read input from file
