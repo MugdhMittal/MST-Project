@@ -1,0 +1,6 @@
+The problem with repair tree occurs when we try to replace an already existing edge with a reduced weight edge.
+Say an edge is there in the mst 1 2 100. The mst has root 3.
+Now if i add an edge 1 2 50 at time 1000 and then remove the same edge at time 2000 then
+it should return the original mst before adding the edge however currently it returns the next best edge
+(which might be say 2 3 150) instead of 1 2 100 
+Rest all repair is fine
