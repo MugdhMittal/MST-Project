@@ -109,7 +109,9 @@ pair<vector<Edge>, vector<Edge>> findMST(vector<Edge> &edges, int n)
 
     for (Edge &edge : filtered)
     {
+
         edge.id = edgeCounter++;
+
         if (dsu.union_sets(edge.x, edge.y))
             Ex.push_back(edge);
         else
@@ -782,19 +784,26 @@ public:
             Classify_Edges(CE, Status, Marked, operation);
 
             // Step 3: Filter out deleted edges before processing
-            CE.erase(std::remove_if(CE.begin(), CE.end(), [&](const Edge &e)
-                                    { return deletedIds.count(e.id); }),
-                     CE.end());
-
+            std::vector<Edge> newCE;
             std::vector<bool> newOp;
-            for (int i = 0, j = 0; i < operation.size(); ++i)
+            std::vector<EdgeStatus> newStatus;
+            std::vector<Edge> newMarked;
+
+            for (int i = 0; i < CE.size(); ++i)
             {
                 if (!deletedIds.count(CE[i].id))
                 {
+                    newCE.push_back(CE[i]);
                     newOp.push_back(operation[i]);
+                    newStatus.push_back(Status[i]);
+                    newMarked.push_back(Marked[i]);
                 }
             }
+
+            CE = std::move(newCE);
             operation = std::move(newOp);
+            Status = std::move(newStatus);
+            Marked = std::move(newMarked);
 
             // Keep auxiliary vectors in sync
             operation.resize(CE.size());
@@ -804,8 +813,7 @@ public:
             // Step 4: Process status changes
             Process_Status(CE, Status, Marked);
 
-            // ✅ Step 5: Remove edges that were marked as NONE (moved to Er)
-            std::vector<Edge> newCE;
+            // Step 5: Remove edges that were marked as NONE (moved to Er)
             std::vector<bool> newOperation;
             for (int i = 0; i < (int)CE.size(); ++i)
             {
@@ -818,8 +826,8 @@ public:
                     newOperation.push_back(operation[i]);
                 }
             }
-            CE = std::move(newCE);
-            operation = std::move(newOperation);
+            CE.clear(); // Don't rebuild CE from itself; processed edges are already handled
+            operation.clear();
         }
 
         CE.clear();
@@ -912,7 +920,6 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
 {
     cout << "[DEBUG] getMST called with t = " << t << endl;
 
-    // Time boundary checks
     if (t < 0)
     {
         cout << "[DEBUG] Time t is negative. Returning empty MST." << endl;
@@ -925,12 +932,6 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
         return vector<Edge>();
     }
 
-    if (t < Tc)
-    {
-        cout << "[DEBUG] Time t is before first modification block. Returning initial MST (rt[0])" << endl;
-        return rt[0].Ex;
-    }
-
     int bkt = t / Tc;
     cout << "[DEBUG] Processing block #" << bkt << " (bkt = " << bkt << ")" << endl;
 
@@ -940,52 +941,56 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
         return vector<Edge>();
     }
 
-    vector<Edge> CE; // Edge changes to process
+    vector<Edge> CE;
     vector<bool> operation;
 
-    for (int i = bkt * Tc + 1; i <= t && i < que.size(); ++i)
+    for (int i = bkt * Tc; i <= t && i < que.size(); ++i)
     {
         if (!que[i].empty())
         {
             cout << "[DEBUG] Processing que[" << i << "] with " << que[i].size() << " updates." << endl;
-            for (int j = 0; j < que[i].size(); ++j)
+            for (auto &entry : que[i])
             {
-                const auto &entry = que[i][j];
+                Edge edge = entry.first;
+                OperationType op = entry.second;
 
-                // DELETE already handled
-                if (entry.second == OperationType::DELETE &&
-                    rt[bkt].deletedIds.count(entry.first.id))
+                if (op == OperationType::DELETE && rt[bkt].deletedIds.count(edge.id))
                 {
-                    cout << "[DEBUG] Skipping already deleted edge id = " << entry.first.id << " from que[" << i << "]" << endl;
+                    cout << "[DEBUG] Skipping already deleted edge id = " << edge.id << " from que[" << i << "]" << endl;
                     continue;
                 }
 
-                // INSERT already in Ex
-                if (entry.second == OperationType::INSERT)
+                if (op == OperationType::INSERT)
                 {
                     auto &Ex = rt[bkt].Ex;
                     if (std::any_of(Ex.begin(), Ex.end(), [&](const Edge &e)
-                                    { return e.id == entry.first.id; }))
+                                    { return e.id == edge.id; }))
                     {
-                        cout << "[DEBUG] Skipping already inserted edge id = " << entry.first.id << " from que[" << i << "]" << endl;
+                        cout << "[DEBUG] Skipping already inserted edge id = " << edge.id << " from que[" << i << "]" << endl;
+                        continue;
+                    }
+
+                    if (rt[bkt].deletedIds.count(edge.id))
+                    {
+                        cout << "[DEBUG] Skipping reinsertion of deleted edge id = " << edge.id << " from que[" << i << "]" << endl;
                         continue;
                     }
                 }
 
-                // Passed filters — schedule it
-                CE.push_back(entry.first);
-                operation.push_back(entry.second == OperationType::INSERT);
-                cout << "  [DEBUG] Scheduled " << (entry.second == OperationType::INSERT ? "INSERT" : "DELETE")
-                     << " of edge (" << entry.first.x << ", " << entry.first.y
-                     << ", w=" << entry.first.w << ", id=" << entry.first.id << ")" << endl;
+                CE.push_back(edge);
+                operation.push_back(op == OperationType::INSERT);
+                cout << "  [DEBUG] Scheduled " << (op == OperationType::INSERT ? "INSERT" : "DELETE")
+                     << " of edge (" << edge.x << ", " << edge.y
+                     << ", w=" << edge.w << ", id=" << edge.id << ")" << endl;
             }
         }
     }
 
     cout << "[DEBUG] Total edges to process: " << CE.size() << endl;
 
-    rt[bkt].ProcessAllEdges(CE, operation);
-    vector<Edge> mst = rt[bkt].Ex; // ← fetch the MST after processing
+    RootedTree working = rt[bkt]; // ← Important: use a copy to avoid state contamination
+    working.ProcessAllEdges(CE, operation);
+    vector<Edge> mst = working.Ex;
 
     cout << "[DEBUG] getMST returning MST with " << mst.size() << " edges." << endl;
     return mst;
@@ -1007,39 +1012,28 @@ void addAndDeleteEdge(int x, int y, int w, int t, int id,
     if ((int)que.size() <= t)
         que.resize(T); // Ensure que is large enough
 
-    // Schedule for the query-time algorithm
     if (op == OperationType::DELETE && rt[0].deletedIds.count(id))
     {
         cout << "[DEBUG] Skipping already deleted edge id = " << id << " at time " << t << endl;
         return;
     }
+
     que[t].push_back({Edge(x, y, w, id), op});
-
-    int block = t / Tc;
-    for (int b = block; b < (int)rt.size(); ++b)
-    {
-        rt[b].updateNode(id, x, y, w, op);
-    }
-
-    cout << "[DEBUG] addAndDeleteEdge completed\n";
 }
 
 int main()
 {
     // Start measuring time
     clock_t tStart = clock();
-    // freopen("debug_output.txt", "w", stdout);
-    // std::cerr.rdbuf(std::cout.rdbuf());
-    cout << "Timer started: " << tStart << endl;
 
-    // Read input from file
-    std::ifstream infile("C:\\Personal\\Studies\\Projects\\Parallel and Concurrent DS\\retro_rooted-main\\in000");
+    std::ifstream infile("in000_fixed.txt");
     if (!infile.is_open())
     {
         cerr << "Error opening input file." << endl;
         return 1;
     }
 
+    // Read n, m, q
     infile >> n >> m >> q;
     cout << "[DEBUG] Read n = " << n << ", m = " << m << ", q = " << q << endl;
 
@@ -1047,54 +1041,43 @@ int main()
     tp = (T / Tc) + 2;
     vector<RootedTree> RT(tp, RootedTree(n));
 
-    // Load original edges and build base MST in RT[0]
+    // Read m edges
     for (int i = 0; i < m; ++i)
     {
         int x, y, w;
         infile >> x >> y >> w;
         edges[i] = Edge(--x, --y, w, i);
     }
+
     auto [baseEx, baseEr] = findMST(edges, n);
     RT[0].Ex = baseEx;
     RT[0].Er = baseEr;
 
-    // Build adjacency and rooted‐tree for block 0
     vector<vector<pair<int, int>>> adjEx_0 = buildExAdj(baseEx, n);
     RT[0].Create_Tree(adjEx_0);
 
-    // Copy block 0’s state into all subsequent blocks
     for (int b = 1; b < tp; ++b)
     {
         RT[b] = RootedTree(RT[b - 1]);
     }
 
     int queryId = n + m;
-    const int totalQueries = 10;
 
-    for (int qi = 0; qi < totalQueries; ++qi)
+    for (int qi = 0; qi < q; ++qi)
     {
         int op;
-        cout << "\nEnter operation (0 = MST query, 1 = Add Edge, 2 = Delete Edge): ";
-        cin >> op;
+        infile >> op;
 
         if (op == 0)
         {
-            // — MST query at time t
             int t;
-            cout << "Enter time t to query MST: ";
-            cin >> t;
-            if (t < 0 || t >= T)
-            {
-                cout << "[ERROR] Invalid time t = " << t << ". Must be in [0, " << T - 1 << "]" << endl;
-                --qi;
-                continue;
-            }
+            infile >> t;
             cout << "[DEBUG] Performing MST query at time " << t << endl;
             vector<Edge> mst = getMST(t, RT);
 
             if (mst.empty())
             {
-                cout << "[WARNING] MST is empty at time t = " << t << ". The graph may be disconnected or no valid edges exist.\n";
+                cout << "[WARNING] MST is empty at time t = " << t << ".\n";
                 continue;
             }
 
@@ -1106,76 +1089,58 @@ int main()
             }
             cout << "MST weight: " << sum << endl;
         }
-        else if (op == 1 || op == 2)
+        else if (op == 1)
         {
-            // — Add or Delete an edge
             int x, y, w, t;
-            cout << "Enter x y weight w and time t: ";
-            cin >> x >> y >> w >> t;
-            if (t < 0 || t >= T)
-            {
-                cout << "[ERROR] Invalid time t = " << t << ". Must be in [0, " << T - 1 << "]" << endl;
-                --qi;
-                continue;
-            }
-
+            infile >> x >> y >> w >> t;
             x--;
             y--;
-            bool isInsert = (op == 1);
+
+            addAndDeleteEdge(x, y, w, t, queryId, RT, OperationType::INSERT);
+            queryId++;
+        }
+        else if (op == 2)
+        {
+            int x, y, w, t;
+            infile >> x >> y >> w >> t;
+            x--;
+            y--;
+
             int realId = queryId;
-
-            if (!isInsert)
+            bool found = false;
+            for (int b = 0; b < tp && !found; ++b)
             {
-
-                // — Deletion: scan every block RT[i] to find matching (x,y,w)
-                bool found = false;
-                for (int b = 0; b < tp && !found; ++b)
+                for (auto &e : RT[b].Ex)
                 {
-                    // scan Ex in block b
-                    for (auto &e : RT[b].Ex)
+                    if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && std::abs(e.w - w) < 1e-6)
                     {
-                        if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && e.w == w)
-                        {
-                            realId = e.id;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (found)
+                        realId = e.id;
+                        found = true;
                         break;
-                    // scan Er in block b
-                    for (auto &e : RT[b].Er)
-                    {
-                        if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && e.w == w)
-                        {
-                            realId = e.id;
-                            found = true;
-                            break;
-                        }
                     }
                 }
-                if (!found)
+                for (auto &e : RT[b].Er)
                 {
-                    cout << "[WARNING] Could not find edge ("
-                         << x << "-" << y << ", w=" << w << ") in any RT[].Ex or RT[].Er." << endl;
+                    if (((e.x == x && e.y == y) || (e.x == y && e.y == x)) && std::abs(e.w - w) < 1e-6)
+                    {
+                        realId = e.id;
+                        found = true;
+                        break;
+                    }
                 }
             }
 
-            // Schedule and apply the update
-            OperationType opType = isInsert ? OperationType::INSERT : OperationType::DELETE;
-            if(!isInsert && realId == queryId)
+            if (!found)
             {
-                cout << "[WARNING] Deleting a non-existent edge with id = " << realId << ". No action taken." << endl;
-                --qi; // Skip this query
-                continue;
+                cout << "[WARNING] Could not find edge (" << x << "-" << y << ", w=" << w << ") for deletion.\n";
             }
-            addAndDeleteEdge(x, y, w, t, realId, RT, opType);
+
+            addAndDeleteEdge(x, y, w, t, realId, RT, OperationType::DELETE);
             queryId++;
         }
         else
         {
-            cout << "[ERROR] Invalid operation type. Must be 0, 1, or 2." << endl;
-            --qi;
+            cout << "[ERROR] Invalid operation type in input: " << op << endl;
         }
     }
 
