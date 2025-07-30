@@ -374,7 +374,6 @@ public:
         }
     }
 
-    // [Algorithm 3] Efficient replacement and local update (Section III-C)
     void replaceEdgeAndUpdateTree(int u, int v, Edge oldEdge, Edge newEdge)
     {
         // std::cout << "[DEBUG] Efficient replaceEdgeAndUpdateTree: replacing edge id=" << oldEdge.id
@@ -711,7 +710,6 @@ public:
         }
         else
         {
-            // [Section III-C] In-place replacements
             for (auto &[Enew, Eold] : toReplace)
             {
                 if (Ex.count(Eold.id))
@@ -747,7 +745,7 @@ public:
         // cout << "[DEBUG] Repair_Tree called\n";
 
         bool changed;
-        int loopCount = 0;
+        int loopCount = 0;//ignore. for debugging purpose
 
         struct Replacement
         {
@@ -1078,7 +1076,7 @@ vector<Edge> getMST(int t, vector<RootedTree> &rt)
 
     // cout << "[DEBUG] Total edges to process: " << CE.size() << endl;
 
-    RootedTree working = rt[bkt]; // ← Important: use a copy to avoid state contamination
+    RootedTree working = rt[bkt]; // Currently using a copy. will change to reversing changes once time taken reduces.
     working.ProcessAllEdges(CE, operation);
     vector<Edge> mst;
     for (const auto &[id, e] : working.Ex)
